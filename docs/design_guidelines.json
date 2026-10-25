@@ -1,0 +1,127 @@
+{
+  "theme": "dark",
+  "archetype": "Archetype 4 (Swiss & High-Contrast)",
+  "vibe": "Bloomberg terminal meets esports leaderboard meets scientific lab. Data-dense, sterile, serious, competitive.",
+  "colors": {
+    "background": "#050505",
+    "surface": "#111111",
+    "surface_hover": "#1A1A1A",
+    "border": "#27272A",
+    "text_primary": "#F4F4F5",
+    "text_secondary": "#A1A1AA",
+    "text_muted": "#52525B",
+    "accents": {
+      "alpha_ai": "#22D3EE",
+      "beta_ai": "#FACC15",
+      "gamma_ai": "#F43F5E",
+      "judge_ai": "#FFFFFF",
+      "success": "#4ADE80",
+      "warning": "#FBBF24",
+      "error": "#EF4444"
+    }
+  },
+  "typography": {
+    "fonts": {
+      "heading": "Chivo",
+      "body": "IBM Plex Sans",
+      "mono": "JetBrains Mono"
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl tracking-tighter font-black text-zinc-100",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-bold text-zinc-100",
+      "h3": "text-xl font-semibold text-zinc-200",
+      "h4": "text-lg font-medium text-zinc-300",
+      "body": "text-sm text-zinc-400 font-body leading-relaxed",
+      "data": "text-sm font-mono tracking-tight text-zinc-300",
+      "label": "text-xs font-mono uppercase tracking-[0.2em] text-zinc-500"
+    }
+  },
+  "spacing_and_layout": {
+    "strategy": "Control Room Grid (Mode B)",
+    "container": "max-w-[1600px] mx-auto px-4 md:px-8",
+    "grid_system": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6",
+    "alignment": "Left-aligned data, strict columns. Use CSS Subgrid alignment for tables where possible."
+  },
+  "components": {
+    "cards": "Flat solid background (bg-surface), 1px solid border (border-zinc-800), max rounded-sm. No shadow, rely on 1px strokes for definition.",
+    "buttons": "Square edges, solid accent colors or ghost with 1px border. font-mono uppercase text-sm.",
+    "badges": "Transparent background, 1px border matching accent color, monospace text.",
+    "tables": "Dense rows, border-b border-zinc-800. Data columns right-aligned, text left-aligned.",
+    "tickets_grid": "10x8 grid for 80 numbers. Small squares (e.g. w-6 h-6 or w-8 h-8). Unselected: border-zinc-800 text-zinc-600. Selected: solid accent color. Hit: solid success color with a subtle drop-shadow glow.",
+    "venn_diagram": "CSS or SVG circles with mix-blend-screen for Judge consensus visualization.",
+    "charts": "Recharts with monospace axes, zero grid lines, sharp line tension (step or linear, no smooth curves)."
+  },
+  "motion": {
+    "hover": "Instant background color shifts, no slow fades. Terminal-like snappiness.",
+    "entrance": "Staggered fade-in (opacity 0 to 1, translate-y-1) for list items. Use 0.15s ease-out.",
+    "live_updates": "Flash effect (bg-zinc-800 to transparent over 0.5s) when new draw numbers arrive to simulate live data ingestion."
+  },
+  "icons": {
+    "library": "Phosphor Icons",
+    "weight": "regular or bold",
+    "installation": "yarn add @phosphor-icons/react"
+  },
+  "images": [
+    {
+      "category": "hero_background",
+      "url": "https://images.unsplash.com/photo-1750969185331-e03829f72c7d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTV8MHwxfHNlYXJjaHwzfHxhYnN0cmFjdCUyMGRhdGElMjBuZXR3b3JrJTIwZGFya3xlbnwwfHx8fDE3ODI4ODY5ODh8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Abstract blue lines and dots on black background (data network). Use at 10-15% opacity behind the main Arena dashboard."
+    },
+    {
+      "category": "texture_overlay",
+      "url": "https://images.unsplash.com/photo-1762163516269-3c143e04175c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2MzR8MHwxfHNlYXJjaHwxfHxzZXJ2ZXIlMjByYWNrJTIwZGFya3xlbnwwfHx8fDE3ODI4ODY5ODd8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Server rack texture. Use for empty states or purely decorative lab atmosphere sections, heavily darkened and low opacity."
+    }
+  ],
+  "pages": {
+    "live_arena": {
+      "layout": "Grid-based control panel.",
+      "sections": [
+        "Header: Countdown timer (font-mono, text-6xl, tracking-tighter) & Last Draw Winning Numbers ticker",
+        "Middle: Three Player AI Cards side-by-side (Alpha, Beta, Gamma) displaying current status, reputation, XP, win streak",
+        "Bottom: Live match ticker (console log style) and Judge Consensus Panel"
+      ]
+    },
+    "leaderboard": {
+      "layout": "Data-heavy table view.",
+      "sections": [
+        "Top: Podium or Top Stats summary (Lifetime Score, Titles)",
+        "Main: Sortable data table with monospace stats (Win %, Avg Hit Rate, Best picks)"
+      ]
+    },
+    "draw_history": {
+      "layout": "Split view: History list on left, Draw Details on right.",
+      "sections": [
+        "Details: The 20 winning numbers displayed prominently.",
+        "AIs' Tickets: Visual grid showing each AI's hits vs misses.",
+        "Judge Notes: Monospace text block resembling a log output."
+      ]
+    },
+    "judge_console": {
+      "layout": "Analytical layout.",
+      "sections": [
+        "Venn-style consensus visualization (overlapping circles of Alpha, Beta, Gamma picks).",
+        "Prediction Release log: Whether predictions are released, with logical reasoning log."
+      ]
+    },
+    "ai_profiles": {
+      "layout": "Profile dashboard.",
+      "sections": [
+        "Header: AI identity, version, overall reputation.",
+        "Charts: Win rate trend, hit rate trend over time (Recharts line charts).",
+        "Trophies/Badges: Grid of unlocked achievements."
+      ]
+    }
+  },
+  "testing": {
+    "attributes": "All interactive elements (buttons, links, tabs, sort headers) MUST have `data-testid` in kebab-case. Example: data-testid='alpha-ai-card'"
+  },
+  "instructions_to_main_agent": [
+    "Strictly follow the color palette. Do NOT use standard Vercel default styles. Use #050505 for background.",
+    "Use grid lines (border-zinc-800) heavily to separate sections, creating a terminal/instrument panel feel. Embrace 'Grid Borders (The Technical Look)'.",
+    "For the 80-number Keno ticket visualization, map an array of 1 to 80 and style with grid-cols-10. Use distinct colors for unpicked, picked, and hit.",
+    "Ensure the countdown and live numbers use the JetBrains Mono font for precise tabular lining.",
+    "Avoid large border radii. Use `rounded-sm` or `rounded-none` globally to keep the sharp, scientific aesthetic.",
+    "When displaying AI predictions, apply colors specifically mapped to Alpha (Cyan), Beta (Yellow), Gamma (Red) to keep identity consistent across all screens."
+  ]
+}
