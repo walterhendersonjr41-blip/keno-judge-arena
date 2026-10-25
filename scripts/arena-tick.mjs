@@ -52,19 +52,27 @@ async function fetchDraws(feed) {
   return [];
 }
 
-async function llm(system, user, seed, ms = 60000) {
+let lastLlmAt = 0;
+async function llm(system, user, seed, ms = 60000, retried = false) {
   if (budgetLeft() < 30000) throw new Error("time budget");
+  const gap = 5000 - (Date.now() - lastLlmAt); if (gap > 0) await new Promise(res => setTimeout(res, gap)); // anonymous tier: keep calls spaced
+  lastLlmAt = Date.now();
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
+  let r;
   try {
-    const r = await fetch(LLM_URL, {
+    r = await fetch(LLM_URL, {
       method: "POST", headers: { "Content-Type": "application/json" }, signal: ctl.signal,
       body: JSON.stringify({ model: "openai", seed, reasoning_effort: "low", messages: [{ role: "system", content: system + " Think briefly; do not write long frequency tables. Output only what is asked." }, { role: "user", content: user }] }),
     });
-    if (r.status === 402 || r.status === 429) { await new Promise(res => setTimeout(res, 6000)); throw new Error("LLM HTTP " + r.status + " (rate limited)"); }
-    if (!r.ok) throw new Error("LLM HTTP " + r.status);
-    const j = await r.json();
-    return (j.choices?.[0]?.message?.content || "").trim();
+    if (r.ok) { const j = await r.json(); return (j.choices?.[0]?.message?.content || "").trim(); }
   } finally { clearTimeout(t); }
+  const body = (await r.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 160);
+  if ((r.status === 402 || r.status === 429) && !retried && budgetLeft() > 60000) {
+    console.log("LLM", r.status, "rate limited, waiting 20s:", body);
+    await new Promise(res => setTimeout(res, 20000));
+    return llm(system, user, seed, ms, true);
+  }
+  throw new Error("LLM HTTP " + r.status + " " + body);
 }
 
 function compactPrompt(id, target, draws, stats) {
