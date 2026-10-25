@@ -1,19 +1,22 @@
 name: arena-tick
-# Pulls real Tennessee Keno To Go draws, scores sealed AI tickets, seals the next ones,
-# and force-pushes state.json to the orphan `data` branch (so the Pages site on main is not rebuilt).
+# Pulls real Tennessee Keno To Go draws, scores sealed AI tickets, seals the next ones, and force-pushes
+# state.json to the orphan `data` branch (so the Pages site on main is not rebuilt).
+# GitHub's cron is often late or skipped, so each run loops for ~55 min (one tick about every 4 min, the draw
+# cadence) and then dispatches the next run itself. The cron is only a backstop that restarts the chain.
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch: {}
 permissions:
   contents: write
+  actions: write
 concurrency:
   group: arena-tick
   cancel-in-progress: false
 jobs:
   tick:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,15 +32,26 @@ jobs:
             git show FETCH_HEAD:state.json > data/state.json || rm -f data/state.json
           fi
           ls -la data
-      - name: Arena tick
-        run: node scripts/arena-tick.mjs data
-      - name: Publish state to data branch
+      - name: Arena loop (~55 min)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd data
-          git init -q
-          git checkout -q -b data
-          git add state.json
-          git -c user.name="keno-arena-bot" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "arena tick $(date -u +%FT%TZ)"
-          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data:data
+          publish() {
+            rm -rf /tmp/pub && mkdir -p /tmp/pub && cp data/state.json /tmp/pub/ && cd /tmp/pub
+            git init -q && git checkout -q -b data && git add state.json
+            git -c user.name="keno-arena-bot" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "arena tick $(date -u +%FT%TZ)"
+            git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data:data && echo "published"
+            cd "$GITHUB_WORKSPACE"
+          }
+          end=$((SECONDS + 3300))
+          while [ $SECONDS -lt $end ]; do
+            start=$SECONDS
+            node scripts/arena-tick.mjs data || echo "tick failed"
+            [ -f data/state.json ] && (publish || echo "publish failed")
+            wait=$((240 - (SECONDS - start))); [ $wait -gt 0 ] && sleep $wait
+          done
+      - name: Chain next run
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run draws.yml --ref main -R "$GITHUB_REPOSITORY" || echo "dispatch failed; cron will restart"
