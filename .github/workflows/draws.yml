@@ -1,0 +1,43 @@
+name: arena-tick
+# Pulls real Tennessee Keno To Go draws, scores sealed AI tickets, seals the next ones,
+# and force-pushes state.json to the orphan `data` branch (so the Pages site on main is not rebuilt).
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency:
+  group: arena-tick
+  cancel-in-progress: false
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Load previous arena state
+        run: |
+          mkdir -p data
+          if git fetch --depth=1 origin data 2>/dev/null; then
+            git show FETCH_HEAD:state.json > data/state.json || rm -f data/state.json
+          fi
+          ls -la data
+      - name: Arena tick
+        run: node scripts/arena-tick.mjs data
+      - name: Publish state to data branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd data
+          git init -q
+          git checkout -q -b data
+          git add state.json
+          git -c user.name="keno-arena-bot" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "arena tick $(date -u +%FT%TZ)"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data:data
