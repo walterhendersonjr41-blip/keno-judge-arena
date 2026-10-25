@@ -256,22 +256,15 @@ function render(){
 
 function getText(url, ms){
   var ctl = new AbortController(), t = setTimeout(function(){ ctl.abort(); }, ms || 20000);
-  return fetch(url, { cache: url.indexOf("api.github.com") >= 0 ? "no-cache" : "no-store", signal: ctl.signal }).then(function(r){ clearTimeout(t); if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+  return fetch(url, { cache: "no-store", signal: ctl.signal }).then(function(r){ clearTimeout(t); if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
     .catch(function(e){ clearTimeout(t); throw e; });
 }
-// raw.githubusercontent caches a branch URL for up to 5 min (query strings don't bust it), so look up the data
-// branch's head commit (GitHub API, keyless: 60 calls/hr per visitor, so at most every 90 s) and read state.json at that
-// exact commit. If the API is unavailable (rate limit), fall back to the branch URL.
-var headSha = null, headAt = 0;
+// State is read from the data branch on raw.githubusercontent (CORS-safe, keyless). GitHub's CDN may serve a copy up to
+// ~5 min old; the page simply picks up the newer tick on a later poll. (The GitHub API was dropped: from browsers it
+// intermittently answers 404 without CORS headers, which logs console errors.)
 function stateUrl(){
   if (qs.get("state")) return Promise.resolve(STATE_URL + (STATE_URL.indexOf("?") < 0 ? "?" : "&") + "t=" + Date.now());
-  var branchUrl = STATE_URL;
-  if (Date.now() - headAt < 90000) return Promise.resolve(headSha ? branchUrl.replace("/data/state.json", "/" + headSha + "/state.json") : branchUrl);
-  headAt = Date.now();
-  return getText("https://api.github.com/repos/" + REPO + "/commits/data", 15000).then(function(t){
-    var j = JSON.parse(t); if (j && /^[0-9a-f]{40}$/.test(j.sha)) headSha = j.sha;
-    return headSha ? branchUrl.replace("/data/state.json", "/" + headSha + "/state.json") : branchUrl;
-  }).catch(function(){ return headSha ? branchUrl.replace("/data/state.json", "/" + headSha + "/state.json") : branchUrl; });
+  return Promise.resolve(STATE_URL);
 }
 function loadState(){
   return stateUrl().then(function(u){ return getText(u, 20000); }).then(function(txt){

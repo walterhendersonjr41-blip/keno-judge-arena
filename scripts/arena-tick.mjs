@@ -14,7 +14,7 @@ const LLM_URL = "https://text.pollinations.ai/openai";
 const MAX = { draws: 400, rounds: 200, press: 60, releases: 60, reflections: 60, feedLog: 30 };
 const AHEAD = 3; // seal tickets for the next 3 draws so a late cron run still has sealed tickets
 const started = Date.now();
-const budgetLeft = () => 300000 - (Date.now() - started); // keep each run under ~4 min
+const budgetLeft = () => 210000 - (Date.now() - started); // keep each run under ~4 min
 const nowIso = () => new Date().toISOString();
 
 function load() {
@@ -57,6 +57,7 @@ async function llm(system, user, seed, ms = 60000, retried = false) {
   if (budgetLeft() < 30000) throw new Error("time budget");
   const gap = 5000 - (Date.now() - lastLlmAt); if (gap > 0) await new Promise(res => setTimeout(res, gap)); // anonymous tier: keep calls spaced
   lastLlmAt = Date.now();
+  ms = Math.min(ms, budgetLeft() - 15000); if (ms < 10000) throw new Error("time budget");
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
   let r;
   try {
@@ -67,7 +68,7 @@ async function llm(system, user, seed, ms = 60000, retried = false) {
     if (r.ok) { const j = await r.json(); return (j.choices?.[0]?.message?.content || "").trim(); }
   } finally { clearTimeout(t); }
   const body = (await r.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 160);
-  if ((r.status === 402 || r.status === 429) && !retried && budgetLeft() > 60000) {
+  if ((r.status === 402 || r.status === 429) && !retried && budgetLeft() > 75000) {
     console.log("LLM", r.status, "rate limited, waiting 20s:", body);
     await new Promise(res => setTimeout(res, 20000));
     return llm(system, user, seed, ms, true);
