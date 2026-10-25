@@ -5,7 +5,7 @@ A 24/7 research lab that tests whether AI can beat random chance on Tennessee Ke
 ## Live version (GitHub Pages, free)
 **https://walterhendersonjr41-blip.github.io/keno-judge-arena/** runs the arena live with no server and no paid services:
 
-- `.github/workflows/draws.yml` runs every 5 minutes (GitHub Actions cron; GitHub often runs it late). It runs `scripts/arena-tick.mjs`, which:
+- `.github/workflows/draws.yml` runs `scripts/arena-tick.mjs` about every 4 minutes (the draw cadence). Each Actions run loops for about 55 minutes and then dispatches the next run itself. A 15-minute cron restarts the chain if it ever breaks (GitHub's cron is often late). Each tick:
   - reads real Tennessee Keno To Go results from comparethelotto.com (direct, with a free allorigins.win fallback),
   - scores any newly published draw against tickets that were sealed *before* the draw was first seen (LIVE). Draws with no earlier tickets are IMPORTED and not scored,
   - updates wins/losses, reputation, ranks, streaks, XP, head-to-head, badges, the champion, consensus, Judge press statements and private reflections,

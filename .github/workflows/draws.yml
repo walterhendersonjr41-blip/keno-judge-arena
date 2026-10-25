@@ -51,7 +51,7 @@ jobs:
             wait=$((240 - (SECONDS - start))); [ $wait -gt 0 ] && sleep $wait
           done
       - name: Chain next run
-        if: always()
+        if: success()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh workflow run draws.yml --ref main -R "$GITHUB_REPOSITORY" || echo "dispatch failed; cron will restart"
