@@ -1,19 +1,296 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Keno Judge Arena</title>
-<style>body{margin:0;font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#09090b;color:#e4e4e7}
-main{max-width:960px;margin:auto;padding:28px 18px 60px}h1{margin:.2em 0;font-size:2rem}.tag{color:#facc15;letter-spacing:.14em;font:700 .78rem ui-monospace,monospace;text-transform:uppercase}
-.card{background:#18181b;border:1px solid #27272a;border-radius:12px;padding:18px 20px;margin:18px 0}.warn{border-color:#facc15}
-.grid{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;max-width:420px}.n{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border:1px solid #3f3f46;border-radius:4px;font:12px ui-monospace,monospace;color:#a1a1aa}
-.n.hit{background:#facc15;color:#000;border-color:#facc15;font-weight:700}.n.pick{outline:2px solid #22d3ee}.row{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
-table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #27272a;padding:6px 8px;text-align:left;font-size:.92rem}code{color:#22d3ee}footer{opacity:.6;font-size:.85rem;margin-top:30px}</style></head>
-<body><main><div class="tag">Project overview</div><h1>Keno Judge Arena</h1>
-<p>A 24/7 research lab that tests whether AI can beat random chance on Tennessee Keno. Three independent Player AIs (Alpha, Beta, Gamma) each predict every upcoming draw. A neutral Judge AI scores them against the official result, keeps lifetime leaderboards and consensus stats, and only "releases" a pick if the evidence ever shows a player doing better than random. By default it withholds.</p>
-<div class="card warn"><b>About this page.</b> The app needs its FastAPI backend, MongoDB and LLM access, so it can't run on GitHub Pages. This page explains it; the full source is in <code>backend/</code> and <code>frontend/</code>. Keno draws are random: this is a research and entertainment project, not betting advice.</div>
-<div class="card row"><div><h3 style="margin-top:0">Sample draw (illustration)</h3><div class="grid" id="g"></div><p style="font-size:.85rem;opacity:.7">Yellow = 20 drawn numbers, outlined = a player's 8-pick. Randomly generated on this page.</p></div>
-<div style="flex:1;min-width:240px"><h3 style="margin-top:0">Each round</h3><ol><li>Fetch the official draw (or accept a pasted import)</li><li>Score every prediction that targeted it</li><li>Players make fresh 5/6/7/8-pick predictions for the next draw, in parallel and blind to each other</li><li>The Judge updates XP, reputation and consensus, and decides whether to release anything</li></ol><p id="score"></p></div></div>
-<div class="card"><h2>Pages</h2><table><tr><th>Arena</th><td>Live round, the three players' cards and the latest draw</td></tr><tr><th>Leaderboard</th><td>Lifetime hit rates vs the random baseline</td></tr><tr><th>Draw History</th><td>Every draw, permanently recorded (no resets)</td></tr><tr><th>Judge Console / Judge Picks</th><td>The Judge's reasoning and a verified ledger of any released picks</td></tr><tr><th>AI Profiles, Hall of Fame, Press Room</th><td>Per-player stats, titles and post-draw commentary</td></tr></table></div>
-<div class="card"><h2>How it's built</h2><p><b>Backend:</b> Python FastAPI, APScheduler (30 s pipeline tick plus a slower feed fetch), MongoDB (Motor), draw source with simulation fallback and manual paste import, pytest suite. <b>Frontend:</b> React + Tailwind + shadcn/ui. <b>AIs:</b> three different LLMs as players plus a Judge, via the Emergent LLM integration (key from env).</p></div>
-<footer>Created by Walter Henderson Jr.</footer></main>
-<script>var d=[],p=[];while(d.length<20){var x=1+Math.floor(Math.random()*80);if(d.indexOf(x)<0)d.push(x)}while(p.length<8){var y=1+Math.floor(Math.random()*80);if(p.indexOf(y)<0)p.push(y)}
-var g=document.getElementById('g');for(var i=1;i<=80;i++){var e=document.createElement('div');e.className='n'+(d.indexOf(i)>=0?' hit':'')+(p.indexOf(i)>=0?' pick':'');e.textContent=i;g.appendChild(e)}
-var h=p.filter(function(v){return d.indexOf(v)>=0}).length;document.getElementById('score').textContent='This sample pick caught '+h+' of 8. Random expectation is 2.0 of 8.';</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Keno Judge Arena — Live</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chivo:wght@700;900&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#050505;--s:#111;--sh:#1A1A1A;--b:#27272A;--t:#F4F4F5;--t2:#A1A1AA;--tm:#52525B;--alpha:#22D3EE;--beta:#FACC15;--gamma:#F43F5E;--ok:#4ADE80;--warn:#FBBF24;--err:#EF4444}
+*{box-sizing:border-box;border-radius:0}
+body{margin:0;background:var(--bg);color:var(--t);font:14px/1.5 "IBM Plex Sans",system-ui,sans-serif;display:flex;min-height:100vh}
+a{color:inherit}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+.eyebrow{font:600 11px "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.2em;color:#71717A}
+h1,h2,h3{font-family:Chivo,sans-serif;margin:0}
+h1{font-weight:900;font-size:34px;letter-spacing:-.03em}
+h2{font-weight:700;font-size:22px;letter-spacing:-.02em;margin-bottom:12px}
+nav{width:220px;flex:none;border-right:1px solid var(--b);background:#080808;padding:20px 0;position:sticky;top:0;height:100vh}
+nav .brand{padding:0 20px 20px;border-bottom:1px solid var(--b);margin-bottom:10px}
+nav .brand b{font:900 16px Chivo;letter-spacing:-.02em;display:block}
+nav a{display:block;padding:9px 20px;text-decoration:none;color:var(--t2);font:500 12px "JetBrains Mono";text-transform:uppercase;letter-spacing:.12em;border-left:2px solid transparent}
+nav a:hover{background:var(--sh);color:var(--t)}
+nav a.on{color:var(--t);border-left-color:var(--ok);background:var(--s)}
+main{flex:1;min-width:0;padding:24px 32px 60px;max-width:1600px}
+.card{background:var(--s);border:1px solid var(--b);padding:16px}
+.row{display:flex;gap:16px;flex-wrap:wrap}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--b);border:1px solid var(--b)}
+.kv>div{background:var(--s);padding:10px 12px}
+.kv .v{font:600 15px "JetBrains Mono";margin-top:2px}
+.kgrid{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;max-width:520px}
+.kgrid div{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border:1px solid var(--b);font:500 13px "JetBrains Mono";color:var(--tm);background:#0a0a0a}
+.kgrid div.hit{background:var(--ok);color:#050505;border-color:var(--ok);box-shadow:0 0 10px rgba(74,222,128,.45);font-weight:600}
+.balls{display:flex;flex-wrap:wrap;gap:4px}
+.ball{min-width:28px;padding:2px 4px;text-align:center;border:1px solid var(--b);font:500 12px "JetBrains Mono";color:var(--t2)}
+.ball.h{color:#050505;font-weight:600}
+.pill{display:inline-block;padding:1px 7px;border:1px solid var(--b);font:600 10px "JetBrains Mono";letter-spacing:.12em;text-transform:uppercase}
+.live{color:var(--ok);border-color:var(--ok)}.imp{color:var(--t2)}.prov{color:var(--warn);border-color:var(--warn)}.bad{color:var(--err);border-color:var(--err)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font:600 10px "JetBrains Mono";text-transform:uppercase;letter-spacing:.15em;color:#71717A;padding:8px;border-bottom:1px solid var(--b)}
+td{padding:8px;border-bottom:1px solid #1c1c1f;vertical-align:top}
+.muted{color:var(--t2)}.dim{color:var(--tm)}
+.dot{display:inline-block;width:8px;height:8px;margin-right:6px;background:var(--tm)}
+.dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok);animation:p 2s infinite}
+@keyframes p{50%{opacity:.4}}
+.player{border-top:3px solid var(--acc)}
+.player h3{color:var(--acc)}
+.tk{margin:6px 0}
+.tk .eyebrow{font-size:10px;margin-bottom:3px}
+footer{margin-top:40px;border-top:1px solid var(--b);padding-top:14px;color:var(--tm);font-size:12px}
+.sec{margin-top:24px}
+.empty{color:var(--tm);font:12px "JetBrains Mono";padding:12px 0}
+@media(max-width:800px){body{flex-direction:column}nav{width:auto;height:auto;position:static;display:flex;flex-wrap:wrap;padding:8px}nav .brand{width:100%;border:0;padding:4px 8px}nav a{padding:6px 10px;border-left:0}main{padding:16px}}
+</style>
+</head>
+<body>
+<nav id="nav">
+  <div class="brand"><span class="eyebrow">Live · TN Keno To Go</span><b>KENO JUDGE ARENA</b></div>
+  <a href="#arena">Arena</a><a href="#leaderboard">Leaderboard</a><a href="#draws">Draws</a><a href="#judge">Judge</a>
+  <a href="#agents">Agents</a><a href="#press">Press Room</a><a href="#hall">Hall of Fame</a><a href="#picks">Judge Picks</a>
+</nav>
+<main>
+  <div id="status" class="row" style="justify-content:space-between;align-items:center;margin-bottom:18px">
+    <div><span class="eyebrow">Real-draw feed</span><div class="mono" id="feedline"><span class="dot"></span>connecting…</div></div>
+    <div class="mono dim" id="clock"></div>
+  </div>
+  <div id="view"></div>
+  <footer>Experimental research &amp; entertainment system. No lottery winnings guaranteed. Keno draws are random; nothing here predicts them reliably.
+    Draw results are read from public Tennessee Keno To Go results (comparethelotto.com) — never invented. Player AIs and the Judge run on the free, keyless Pollinations text API.
+    <span id="build" class="mono"></span></footer>
+</main>
+<script src="engine.js"></script>
+<script>
+(function(){
+"use strict";
+var E = window.KenoEngine;
+var REPO = "walterhendersonjr41-blip/keno-judge-arena";
+var qs = new URLSearchParams(location.search);
+var STATE_URL = qs.get("state") || ("https://raw.githubusercontent.com/" + REPO + "/data/state.json");
+// Optional browser-side check of the source page through a free CORS proxy (off by default: public proxies are flaky
+// and a failed cross-origin request is logged by the browser). Enable with ?live=1 (allorigins) or ?live=<proxy prefix>.
+var LIVE_PARAM = qs.get("live");
+var LIVE_URL = !LIVE_PARAM ? null : (LIVE_PARAM === "1" ? "https://api.allorigins.win/raw?url=" + encodeURIComponent(E.SOURCE_URL) : LIVE_PARAM + encodeURIComponent(E.SOURCE_URL));
+var POLL_MS = 60000;
+var S = null, stateErr = null, stateAt = null;
+var live = { draws: [], at: null, err: null };
+var ACC = { alpha: "#22D3EE", beta: "#FACC15", gamma: "#F43F5E" };
+
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]; }); }
+function et(iso){ if(!iso) return "—"; var d = new Date(iso); if(isNaN(d)) return "—";
+  return d.toLocaleString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric",hour:"numeric",minute:"2-digit",second:"2-digit"}) + " ET"; }
+function ago(iso){ if(!iso) return ""; var s = Math.round((Date.now() - new Date(iso)) / 1000); if (s < 60) return s + "s ago"; if (s < 3600) return Math.round(s/60) + "m ago"; return Math.round(s/3600) + "h ago"; }
+function balls(nums, hitSet, color){ return '<div class="balls">' + nums.map(function(n){ var h = hitSet && hitSet[n];
+  return '<span class="ball' + (h ? ' h' : '') + '"' + (h ? ' style="background:' + (color || 'var(--ok)') + ';border-color:' + (color || 'var(--ok)') + '"' : '') + '>' + n + '</span>'; }).join("") + '</div>'; }
+function set(arr){ var o = {}; (arr || []).forEach(function(n){ o[n] = 1; }); return o; }
+function grid(nums){ var h = set(nums), out = ""; for (var i = 1; i <= 80; i++) out += '<div class="' + (h[i] ? 'hit' : '') + '">' + i + '</div>'; return '<div class="kgrid">' + out + '</div>'; }
+function pill(src){ var c = src === "LIVE" ? "live" : src === "PROVISIONAL" ? "prov" : "imp"; return '<span class="pill ' + c + '">' + esc(src) + '</span>'; }
+
+// All draws: server state + browser-seen draws newer than the server's latest (never invented, only parsed from the source page)
+function allDraws(){
+  var list = S ? S.draws.slice() : [];
+  var top = list.length ? list[0].draw_number : 0;
+  live.draws.forEach(function(d){ if (d.draw_number > top) list.push({ draw_number: d.draw_number, winning_numbers: d.winning_numbers, date: d.date, first_seen_at: d.first_seen_at, source: "PROVISIONAL" }); });
+  list.sort(function(a,b){ return b.draw_number - a.draw_number; });
+  return list;
+}
+function provisionalScore(d){
+  if (!S || !S.predictions || !S.predictions[d.draw_number]) return null;
+  var preds = Object.values(S.predictions[d.draw_number]).filter(function(p){ return p.sealed_at < d.first_seen_at; });
+  if (!preds.length) return null;
+  var scored = preds.map(function(p){ return E.scorePrediction(p, d.winning_numbers); });
+  var res = E.rankPredictions(scored), out = {};
+  scored.forEach(function(s){ out[s.ai_id] = { result: res[s.ai_id], total_hits: s.total_hits, ticket_scores: s.ticket_scores }; });
+  return out;
+}
+
+function feedLine(){
+  var el = document.getElementById("feedline");
+  var latest = allDraws()[0];
+  var ok = S && !stateErr;
+  var parts = [];
+  if (latest) parts.push("latest draw #" + latest.draw_number + " · " + esc(latest.date || ""));
+  if (S) parts.push("server tick " + ago(S.updated_at) + " (" + esc(S.feed && S.feed.route || "?") + ")");
+  else if (stateErr) parts.push("arena state unavailable: " + esc(stateErr));
+  if (live.at) parts.push("browser check " + ago(live.at) + (live.err ? " (failed)" : ""));
+  el.innerHTML = '<span class="dot ' + (ok ? 'on' : '') + '"></span>' + (parts.join(" · ") || "connecting…");
+}
+
+function playerCard(id, nextTarget){
+  var st = S.stats[id], c = E.AGENT_CONFIG[id];
+  var sealed = S.predictions && S.predictions[nextTarget] && S.predictions[nextTarget][id];
+  var last = S.rounds && S.rounds.find(function(r){ return r.scores && r.scores[id]; });
+  var h = '<div class="card player" style="--acc:' + ACC[id] + '">';
+  h += '<div class="row" style="justify-content:space-between"><div><span class="eyebrow">' + esc(c.personality) + '</span><h3>' + esc(c.display_name) + (st.is_champion ? ' 👑' : '') + '</h3></div>';
+  h += '<div style="text-align:right"><span class="pill">' + esc(st.league_rank) + '</span><div class="mono dim" style="font-size:11px;margin-top:4px">REP ' + Math.floor(st.reputation) + '</div></div></div>';
+  h += '<div class="muted" style="font-size:12px;margin:4px 0 10px">' + esc(c.personality_tag) + '</div>';
+  h += '<div class="kv"><div><span class="eyebrow">W-L-D</span><div class="v">' + st.total_wins + '-' + st.total_losses + '-' + st.total_draws + '</div></div>' +
+       '<div><span class="eyebrow">Streak</span><div class="v">' + (st.current_streak > 0 ? '+' : '') + st.current_streak + '</div></div>' +
+       '<div><span class="eyebrow">Score</span><div class="v">' + st.lifetime_score + '</div></div>' +
+       '<div><span class="eyebrow">XP</span><div class="v">' + st.xp + '</div></div></div>';
+  h += '<div class="mono" style="font-size:12px;margin:10px 0">' + (st.in_recovery ? '<span class="pill bad">Recovery</span> ' : '') + esc(st.mood) + '</div>';
+  if (last) { var sc = last.scores[id]; h += '<div class="eyebrow">Last round · #' + last.draw_number + '</div><div class="mono" style="margin-bottom:8px">' + esc(sc.result.toUpperCase()) + ' · ' + sc.total_hits + ' hits</div>'; }
+  h += '<div class="eyebrow" style="margin-top:6px">Sealed for draw #' + nextTarget + '</div>';
+  if (sealed) {
+    h += '<div class="dim mono" style="font-size:11px">sealed ' + et(sealed.sealed_at) + (sealed.fallback ? ' · <span style="color:var(--warn)">fallback sample (LLM unreachable)</span>' : '') + '</div>';
+    sealed.tickets.forEach(function(t){ h += '<div class="tk"><div class="eyebrow">' + t.spots + '-spot</div>' + balls(t.numbers) + '</div>'; });
+    if (sealed.reasoning) h += '<div class="muted" style="font-size:12px;margin-top:8px">“' + esc(sealed.reasoning) + '”</div>';
+  } else h += '<div class="empty">No ticket sealed yet — next server tick will seal one.</div>';
+  return h + '</div>';
+}
+
+var views = {
+  arena: function(){
+    if (!S && !live.draws.length) return '<div class="card"><span class="eyebrow">Arena</span><div class="empty">' + (stateErr ? 'Waiting for the first server tick (' + esc(stateErr) + ').' : 'Loading real draws…') + '</div></div>';
+    var draws = allDraws(), d = draws[0];
+    var h = '<span class="eyebrow">Live arena</span><h1>Draw #' + d.draw_number + '</h1>';
+    h += '<div class="kv" style="margin:14px 0 18px"><div><span class="eyebrow">Draw date</span><div class="v">' + esc(d.date || "—") + '</div></div>' +
+      '<div><span class="eyebrow">First seen</span><div class="v">' + et(d.first_seen_at) + '</div></div>' +
+      '<div><span class="eyebrow">Status</span><div class="v">' + pill(d.source) + '</div></div>' +
+      '<div><span class="eyebrow">Next target</span><div class="v">#' + (d.draw_number + 1) + '</div></div>' +
+      '<div><span class="eyebrow">Rounds scored</span><div class="v">' + (S ? S.rounds.length : 0) + '</div></div></div>';
+    h += '<div class="row" style="align-items:flex-start"><div class="card" style="flex:1;min-width:300px;max-width:560px"><span class="eyebrow">Official winning numbers · source comparethelotto.com</span><div style="margin-top:10px">' + grid(d.winning_numbers) + '</div></div>';
+    h += '<div class="card" style="flex:1;min-width:280px"><span class="eyebrow">Round result</span>';
+    var round = S && S.rounds.find(function(r){ return r.draw_number === d.draw_number; });
+    var scores = round ? round.scores : (d.source === "PROVISIONAL" ? provisionalScore(d) : null);
+    if (scores) {
+      if (!round) h += '<div class="dim mono" style="font-size:11px;margin:4px 0">Provisional (scored in your browser) — official scoring on the next server tick.</div>';
+      E.AI_IDS.forEach(function(id){ var s = scores[id]; if (!s) return;
+        h += '<div style="margin:10px 0"><div class="mono" style="color:' + ACC[id] + '">' + esc(E.AGENT_CONFIG[id].display_name) + ' — ' + esc(String(s.result).toUpperCase()) + ' · ' + s.total_hits + ' hits</div>';
+        (s.ticket_scores || []).forEach(function(t){ h += '<div class="tk">' + balls(t.numbers, set(t.hits), ACC[id]) + '</div>'; });
+        h += '</div>'; });
+      if (round && round.events && round.events.length) h += '<div class="muted" style="font-size:12px">' + round.events.map(esc).join("<br>") + '</div>';
+    } else h += '<div class="empty">' + (d.source === "IMPORTED" ? 'IMPORTED draw — no tickets were sealed before it was published, so it is not scored.' : 'No sealed tickets for this draw.') + '</div>';
+    h += '</div></div>';
+    if (S) { h += '<div class="sec"><h2>Players</h2><div class="grid3">' + E.AI_IDS.map(function(id){ return playerCard(id, d.draw_number + 1); }).join("") + '</div></div>';
+      var rel = S.releases.find(function(r){ return r.target_draw_number === d.draw_number + 1; }) || S.releases[0];
+      if (rel) h += '<div class="sec card"><span class="eyebrow">Judge · draw #' + rel.target_draw_number + '</span><div class="mono" style="margin:6px 0">' + (rel.released ? 'RELEASED (' + esc(rel.source) + ')' : 'WITHHELD') + '</div>' + (rel.recommended_ticket ? balls(rel.recommended_ticket.numbers) : '') + '<div class="muted" style="font-size:12px;margin-top:6px">' + esc(rel.reasoning) + '</div></div>'; }
+    h += '<div class="sec"><h2>Recent rounds</h2>' + roundsTable(S ? S.rounds.slice(0, 10) : []) + '</div>';
+    return h;
+  },
+  leaderboard: function(){
+    if (!S) return wait();
+    var list = E.AI_IDS.map(function(id){ return S.stats[id]; }).sort(function(a,b){ return (b.lifetime_score - a.lifetime_score) || (b.total_wins - a.total_wins); });
+    var h = '<span class="eyebrow">Standings</span><h1>Leaderboard</h1><div class="card sec"><table><tr><th>#</th><th>Player</th><th>Rank</th><th>Rep</th><th>W-L-D</th><th>No play</th><th>Hits</th><th>Hit rate</th><th>Streak</th><th>Score</th><th>XP</th></tr>';
+    list.forEach(function(s, i){ var hr = s.total_ticket_spots ? (100 * s.total_hits / s.total_ticket_spots).toFixed(1) + '%' : '—';
+      h += '<tr><td class="mono">' + (i+1) + '</td><td style="color:' + ACC[s.ai_id] + '">' + esc(s.display_name) + (s.is_champion ? ' 👑' : '') + '</td><td>' + esc(s.league_rank) + '</td><td class="mono">' + Math.floor(s.reputation) + '</td><td class="mono">' + s.total_wins + '-' + s.total_losses + '-' + s.total_draws + '</td><td class="mono">' + s.total_no_play + '</td><td class="mono">' + s.total_hits + '</td><td class="mono">' + hr + '</td><td class="mono">' + s.current_streak + '</td><td class="mono">' + s.lifetime_score + '</td><td class="mono">' + s.xp + '</td></tr>'; });
+    return h + '</table></div><div class="sec"><h2>Round history</h2>' + roundsTable(S.rounds) + '</div>';
+  },
+  draws: function(){
+    var draws = allDraws();
+    var h = '<span class="eyebrow">Official results · Tennessee Keno To Go</span><h1>Draws</h1><p class="muted">Every number here was parsed from <a href="' + esc(E.SOURCE_URL) + '" target="_blank" rel="noopener">comparethelotto.com</a>. LIVE = tickets were sealed before the draw was first seen; IMPORTED = history only, not scored; PROVISIONAL = seen by your browser before the server tick.</p>';
+    if (!draws.length) return h + wait();
+    h += '<div class="card"><table><tr><th>Draw</th><th>Date</th><th>First seen</th><th>Status</th><th>Winning numbers</th></tr>';
+    draws.slice(0, 150).forEach(function(d){ h += '<tr><td class="mono">#' + d.draw_number + '</td><td class="mono">' + esc(d.date || "") + '</td><td class="mono dim">' + et(d.first_seen_at) + '</td><td>' + pill(d.source) + (d.mismatch ? ' <span class="pill bad">source changed</span>' : '') + '</td><td>' + balls(d.winning_numbers) + '</td></tr>'; });
+    return h + '</table></div>';
+  },
+  judge: function(){
+    if (!S) return wait();
+    var h = '<span class="eyebrow">Neutral judge</span><h1>Judge Console</h1><p class="muted">The Judge defaults to WITHHOLD and only releases a ticket when the verified record supports it.</p><div class="card"><table><tr><th>Target</th><th>Decision</th><th>Ticket</th><th>Hits</th><th>Reasoning</th></tr>';
+    S.releases.forEach(function(r){ h += '<tr><td class="mono">#' + r.target_draw_number + '</td><td class="mono">' + (r.released ? '<span class="pill live">release · ' + esc(r.source) + '</span>' : '<span class="pill">withhold</span>') + '</td><td>' + (r.recommended_ticket ? balls(r.recommended_ticket.numbers) : '—') + '</td><td class="mono">' + (r.hits == null ? '—' : r.hits) + '</td><td class="muted" style="font-size:12px">' + esc(r.reasoning) + '</td></tr>'; });
+    return h + '</table></div>';
+  },
+  agents: function(){
+    if (!S) return wait();
+    var h = '<span class="eyebrow">Player labs</span><h1>Agents</h1><div class="grid3 sec">';
+    E.AI_IDS.forEach(function(id){ var s = S.stats[id];
+      h += '<div class="card player" style="--acc:' + ACC[id] + '"><h3>' + esc(s.display_name) + '</h3><div class="muted" style="font-size:12px">' + esc(s.personality) + ' · model: ' + esc(s.model_name) + '</div>';
+      h += '<div class="eyebrow" style="margin-top:12px">Head to head</div>';
+      E.AI_IDS.filter(function(o){ return o !== id; }).forEach(function(o){ var r = s.h2h[o] || {}; h += '<div class="mono" style="font-size:12px">vs ' + esc(E.AGENT_CONFIG[o].display_name) + ': ' + (r.wins||0) + 'W ' + (r.losses||0) + 'L ' + (r.draws||0) + 'D</div>'; });
+      h += '<div class="eyebrow" style="margin-top:12px">Badges</div><div class="mono" style="font-size:12px">' + (s.badges.length ? s.badges.map(esc).join(" · ") : '—') + '</div>';
+      h += '<div class="eyebrow" style="margin-top:12px">Best picks</div><div class="mono" style="font-size:12px">5:' + s.best_5pick + ' 6:' + s.best_6pick + ' 7:' + s.best_7pick + ' 8:' + s.best_8pick + '</div>';
+      h += '<div class="eyebrow" style="margin-top:12px">Private reflections</div>';
+      var refl = S.reflections.filter(function(r){ return r.ai_id === id; }).slice(0, 6);
+      h += refl.length ? refl.map(function(r){ return '<div style="font-size:12px;margin:6px 0"><span class="mono dim">#' + r.draw_number + ' ' + esc(r.result) + '</span> ' + esc(r.text) + '</div>'; }).join("") : '<div class="empty">No rounds played yet.</div>';
+      h += '</div>'; });
+    return h + '</div>';
+  },
+  press: function(){
+    if (!S) return wait();
+    var h = '<span class="eyebrow">Judge statements</span><h1>Press Room</h1>';
+    if (!S.press.length) return h + '<div class="empty">No statements yet — the Judge speaks after each scored round.</div>';
+    return h + S.press.map(function(p){ return '<div class="card sec"><span class="eyebrow">Draw #' + p.draw_number + ' · ' + et(p.created_at) + '</span><h3 style="margin:6px 0">' + esc(p.headline) + '</h3><div class="muted">' + esc(p.body) + '</div></div>'; }).join("");
+  },
+  hall: function(){
+    if (!S) return wait();
+    var h = '<span class="eyebrow">Legacy</span><h1>Hall of Fame</h1><div class="card sec"><table><tr><th>Player</th><th>Titles</th><th>Times leader</th><th>Longest reign</th><th>Longest win streak</th><th>Trophies</th><th>Badges</th></tr>';
+    E.AI_IDS.forEach(function(id){ var s = S.stats[id]; h += '<tr><td style="color:' + ACC[id] + '">' + esc(s.display_name) + (s.is_champion ? ' 👑' : '') + '</td><td class="mono">' + s.championship_titles + '</td><td class="mono">' + s.times_became_leader + '</td><td class="mono">' + s.reign_longest + '</td><td class="mono">' + s.longest_win_streak + '</td><td class="mono">' + s.trophies + '</td><td class="mono" style="font-size:12px">' + (s.badges.map(esc).join(", ") || '—') + '</td></tr>'; });
+    return h + '</table></div>';
+  },
+  picks: function(){
+    if (!S) return wait();
+    var rel = S.releases.filter(function(r){ return r.released && r.recommended_ticket; });
+    var h = '<span class="eyebrow">Released by the Judge</span><h1>Judge Picks</h1>';
+    if (!rel.length) return h + '<div class="empty">The Judge has not released a pick yet (default is to withhold).</div>';
+    return h + '<div class="card"><table><tr><th>Draw</th><th>Source</th><th>Ticket</th><th>Hits</th></tr>' + rel.map(function(r){ var d = allDraws().find(function(x){ return x.draw_number === r.target_draw_number; });
+      return '<tr><td class="mono">#' + r.target_draw_number + '</td><td class="mono">' + esc(r.source) + '</td><td>' + balls(r.recommended_ticket.numbers, d ? set(d.winning_numbers) : null) + '</td><td class="mono">' + (r.hits == null ? 'pending' : r.hits + '/' + r.recommended_ticket.spots) + '</td></tr>'; }).join("") + '</table></div>';
+  }
+};
+function wait(){ return '<div class="empty">' + (stateErr ? 'Arena state not available yet (' + esc(stateErr) + ').' : 'Loading arena state…') + '</div>'; }
+function roundsTable(rounds){
+  if (!rounds.length) return '<div class="empty">No rounds scored yet. A round is scored only when all tickets were sealed before the draw was published.</div>';
+  return '<div class="card"><table><tr><th>Draw</th><th>Scored</th>' + E.AI_IDS.map(function(id){ return '<th style="color:' + ACC[id] + '">' + id + '</th>'; }).join("") + '<th>Consensus hits</th></tr>' +
+    rounds.map(function(r){ return '<tr><td class="mono">#' + r.draw_number + '</td><td class="mono dim">' + et(r.scored_at) + '</td>' + E.AI_IDS.map(function(id){ var s = r.scores[id]; return '<td class="mono">' + (s ? esc(s.result) + ' · ' + s.total_hits : '—') + '</td>'; }).join("") + '<td class="mono">' + (r.consensus ? r.consensus.consensus_hits + '/' + r.consensus.consensus_numbers.length : '—') + '</td></tr>'; }).join("") + '</table></div>';
+}
+
+function render(){
+  var route = (location.hash || "#arena").slice(1); if (!views[route]) route = "arena";
+  document.querySelectorAll("nav a").forEach(function(a){ a.classList.toggle("on", a.getAttribute("href") === "#" + route); });
+  try { document.getElementById("view").innerHTML = views[route](); }
+  catch (e) { document.getElementById("view").innerHTML = '<div class="empty">Render problem: ' + esc(e.message) + '</div>'; }
+  feedLine();
+  document.body.dataset.latest = (allDraws()[0] || {}).draw_number || "";
+}
+
+function getText(url, ms){
+  var ctl = new AbortController(), t = setTimeout(function(){ ctl.abort(); }, ms || 20000);
+  return fetch(url, { cache: "no-store", signal: ctl.signal }).then(function(r){ clearTimeout(t); if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+    .catch(function(e){ clearTimeout(t); throw e; });
+}
+// State is read from the data branch on raw.githubusercontent (CORS-safe, keyless). GitHub's CDN may serve a copy up to
+// ~5 min old; the page simply picks up the newer tick on a later poll. (The GitHub API was dropped: from browsers it
+// intermittently answers 404 without CORS headers, which logs console errors.)
+function stateUrl(){
+  if (qs.get("state")) return Promise.resolve(STATE_URL + (STATE_URL.indexOf("?") < 0 ? "?" : "&") + "t=" + Date.now());
+  return Promise.resolve(STATE_URL);
+}
+function loadState(){
+  return stateUrl().then(function(u){ return getText(u, 20000); }).then(function(txt){
+    var s = JSON.parse(txt); if (!s || !s.stats || !Array.isArray(s.draws)) throw new Error("bad state");
+    s.draws = s.draws.filter(E.validDraw);
+    if (!S || !S.updated_at || s.updated_at >= S.updated_at) S = s;
+    stateErr = null; stateAt = new Date().toISOString();
+  }).catch(function(e){ stateErr = e.name === "AbortError" ? "timeout" : (e.message || "unreachable"); });
+}
+function checkLive(){
+  if (!LIVE_URL || document.hidden) return Promise.resolve();
+  return getText(LIVE_URL, 25000).then(function(html){
+    var parsed = E.parseCTL(html); if (!parsed.length) throw new Error("no draws parsed");
+    var now = new Date().toISOString(), known = {}; live.draws.forEach(function(d){ known[d.draw_number] = d; });
+    live.draws = parsed.slice(0, 10).map(function(d){ var k = known[d.draw_number]; return { draw_number: d.draw_number, winning_numbers: d.winning_numbers, date: d.date, first_seen_at: k ? k.first_seen_at : now }; });
+    live.at = now; live.err = null;
+  }).catch(function(e){ live.at = new Date().toISOString(); live.err = e.message || "failed"; });
+}
+function tick(){ return Promise.all([loadState(), checkLive()]).then(render); }
+
+window.addEventListener("hashchange", render);
+document.addEventListener("visibilitychange", function(){ if (!document.hidden) tick(); });
+setInterval(function(){ document.getElementById("clock").textContent = new Date().toLocaleString("en-US",{timeZone:"America/New_York",weekday:"short",hour:"numeric",minute:"2-digit",second:"2-digit"}) + " ET"; }, 1000);
+setInterval(function(){ var r = (location.hash || "#arena").slice(1); if (r === "arena" || r === "draws") feedLine(); }, 15000);
+render(); tick(); setInterval(tick, POLL_MS);
+})();
+</script>
+</body>
+</html>

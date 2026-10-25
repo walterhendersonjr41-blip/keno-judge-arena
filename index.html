@@ -151,6 +151,28 @@ function playerCard(id, nextTarget){
   return h + '</div>';
 }
 
+function playedSection(nextTarget){
+  var h = '<div class="sec" id="played"><h2>What they played</h2>';
+  h += '<div class="card"><span class="eyebrow">Picks for next draw #' + nextTarget + '</span>';
+  var np = (S.predictions && S.predictions[nextTarget]) || {};
+  E.AI_IDS.forEach(function(id){ var p = np[id];
+    h += '<div style="margin:10px 0"><div class="mono" style="color:' + ACC[id] + '">' + esc(E.AGENT_CONFIG[id].display_name) + '</div>';
+    if (!p) h += '<div class="empty">Sealed until the next server tick.</div>';
+    else (p.tickets || []).forEach(function(t){ h += '<div class="tk"><span class="eyebrow">' + t.spots + '-spot</span>' + balls(t.numbers) + '</div>'; });
+    h += '</div>'; });
+  h += '</div>';
+  var rs = (S.rounds || []).slice(0, 10);
+  if (!rs.length) h += '<div class="empty">No scored rounds yet.</div>';
+  rs.forEach(function(r){
+    h += '<div class="card" style="margin-top:12px"><span class="eyebrow">Draw #' + r.draw_number + ' · winning numbers (hits glow)</span>' + balls(r.winning_numbers || []);
+    E.AI_IDS.forEach(function(id){ var s = r.scores && r.scores[id]; if (!s) return;
+      h += '<div style="margin:8px 0"><div class="mono" style="color:' + ACC[id] + '">' + esc(E.AGENT_CONFIG[id].display_name) + ' — ' + esc(String(s.result).toUpperCase()) + ' · ' + s.total_hits + ' hits</div>';
+      (s.ticket_scores || []).forEach(function(t){ h += '<div class="tk"><span class="eyebrow">' + (t.spots || t.numbers.length) + '-spot · ' + (t.hits || []).length + ' hit</span>' + balls(t.numbers, set(t.hits), ACC[id]) + '</div>'; });
+      h += '</div>'; });
+    h += '</div>'; });
+  return h + '</div>';
+}
+
 var views = {
   arena: function(){
     if (!S && !live.draws.length) return '<div class="card"><span class="eyebrow">Arena</span><div class="empty">' + (stateErr ? 'Waiting for the first server tick (' + esc(stateErr) + ').' : 'Loading real draws…') + '</div></div>';
@@ -177,6 +199,7 @@ var views = {
     if (S) { h += '<div class="sec"><h2>Players</h2><div class="grid3">' + E.AI_IDS.map(function(id){ return playerCard(id, d.draw_number + 1); }).join("") + '</div></div>';
       var rel = S.releases.find(function(r){ return r.target_draw_number === d.draw_number + 1; }) || S.releases[0];
       if (rel) h += '<div class="sec card"><span class="eyebrow">Judge · draw #' + rel.target_draw_number + '</span><div class="mono" style="margin:6px 0">' + (rel.released ? 'RELEASED (' + esc(rel.source) + ')' : 'WITHHELD') + '</div>' + (rel.recommended_ticket ? balls(rel.recommended_ticket.numbers) : '') + '<div class="muted" style="font-size:12px;margin-top:6px">' + esc(rel.reasoning) + '</div></div>'; }
+    if (S) h += playedSection(d.draw_number + 1);
     h += '<div class="sec"><h2>Recent rounds</h2>' + roundsTable(S ? S.rounds.slice(0, 10) : []) + '</div>';
     return h;
   },

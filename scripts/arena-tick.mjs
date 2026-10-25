@@ -14,7 +14,8 @@ const LLM_URL = "https://text.pollinations.ai/openai";
 const MAX = { draws: 400, rounds: 200, press: 60, releases: 60, reflections: 60, feedLog: 30 };
 const AHEAD = 3; // seal tickets for the next 3 draws so a late cron run still has sealed tickets
 const started = Date.now();
-const budgetLeft = () => 210000 - (Date.now() - started); // keep each run under ~4 min
+const budgetLeft = () => 480000 - (Date.now() - started); // ~8 min: Pollinations free tier allows 1 reply / 30s per IP, so calls are queued 35s apart
+const LLM_GAP = 35000;
 const nowIso = () => new Date().toISOString();
 
 function load() {
@@ -52,10 +53,18 @@ async function fetchDraws(feed) {
   return [];
 }
 
-let lastLlmAt = 0;
-async function llm(system, user, seed, ms = 60000, retried = false) {
-  if (budgetLeft() < 30000) throw new Error("time budget");
-  const gap = 5000 - (Date.now() - lastLlmAt); if (gap > 0) await new Promise(res => setTimeout(res, gap)); // anonymous tier: keep calls spaced
+let lastLlmAt = 0, llmChain = Promise.resolve();
+const sleep = ms => new Promise(res => setTimeout(res, ms));
+// Single queue: every Pollinations call goes through here, one at a time, >=35s apart.
+function llm(system, user, seed, ms = 60000) {
+  const job = llmChain.then(() => llmCall(system, user, seed, ms, false));
+  llmChain = job.catch(() => {});
+  return job;
+}
+async function llmCall(system, user, seed, ms, retried) {
+  const gap = LLM_GAP - (Date.now() - lastLlmAt);
+  if (budgetLeft() - Math.max(gap, 0) < 30000) throw new Error("time budget");
+  if (gap > 0) await sleep(gap);
   lastLlmAt = Date.now();
   ms = Math.min(ms, budgetLeft() - 15000); if (ms < 10000) throw new Error("time budget");
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
@@ -65,13 +74,19 @@ async function llm(system, user, seed, ms = 60000, retried = false) {
       method: "POST", headers: { "Content-Type": "application/json" }, signal: ctl.signal,
       body: JSON.stringify({ model: "openai", seed, reasoning_effort: "low", messages: [{ role: "system", content: system + " Think briefly; do not write long frequency tables. Output only what is asked." }, { role: "user", content: user }] }),
     });
-    if (r.ok) { const j = await r.json(); return (j.choices?.[0]?.message?.content || "").trim(); }
+    if (r.ok) { const j = await r.json(); lastLlmAt = Date.now(); return (j.choices?.[0]?.message?.content || "").trim(); }
   } finally { clearTimeout(t); }
+  lastLlmAt = Date.now();
   const body = (await r.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 160);
-  if ((r.status === 402 || r.status === 429) && !retried && budgetLeft() > 75000) {
-    console.log("LLM", r.status, "rate limited, waiting 20s:", body);
-    await new Promise(res => setTimeout(res, 20000));
-    return llm(system, user, seed, ms, true);
+  if ((r.status === 402 || r.status === 429) && !retried) {
+    const m = body.match(/(\d+)\s*(?:s\b|sec|second)/i) || [];
+    const ra = Number(r.headers.get("retry-after")) || Number(m[1]) || 30;
+    const delay = Math.min(ra, 60) * 1000 + 5000;
+    if (budgetLeft() - delay > 40000) {
+      console.log("LLM", r.status, "rate limited, retrying in", delay / 1000, "s:", body);
+      await sleep(delay); lastLlmAt = 0;
+      return llmCall(system, user, seed, ms, true);
+    }
   }
   throw new Error("LLM HTTP " + r.status + " " + body);
 }
@@ -92,6 +107,7 @@ async function predict(state, id, target) {
     [compactPrompt(id, target, state.draws, state.stats[id]), 40000, "compact-retry"],
   ];
   for (const [prompt, ms, mode] of attempts) {
+    if (mode === "compact-retry" && budgetLeft() < 200000) break; // keep time for the judge
     try {
       const text = await llm(E.AGENT_CONFIG[id].persona, prompt, mode === "compact" ? seed : seed + 1, ms);
       const p = E.extractJson(text); const tickets = p && E.validateTickets(p);
@@ -131,14 +147,13 @@ async function main() {
   const latest = state.draws[0]?.draw_number || 0;
   state.feed.latest_real_draw_number = real[0]?.draw_number || state.feed.latest_real_draw_number || null;
 
-  // Seal tickets for the next draws (only targets the source has NOT published yet)
+  // 1) Seal the very next draw first if missing (judge needs it)
   if (latest) {
-    for (let target = latest + 1; target <= latest + AHEAD; target++) {
-      state.predictions[target] = state.predictions[target] || {};
-      const todo = E.AI_IDS.filter(id => !state.predictions[target][id]);
-      const results = []; for (const id of todo) results.push(await predict(state, id, target)); // sequential: anonymous tier rejects concurrent calls (HTTP 402)
-      todo.forEach((id, i) => { state.predictions[target][id] = { ai_id: id, target_draw_number: target, sealed_at: nowIso(), revealed: false, ...results[i] }; });
-    }
+    const t1 = latest + 1; state.predictions[t1] = state.predictions[t1] || {};
+    for (const id of E.AI_IDS.filter(id => !state.predictions[t1][id])) state.predictions[t1][id] = { ai_id: id, target_draw_number: t1, sealed_at: nowIso(), revealed: false, ...(await predict(state, id, t1)) };
+  }
+  // 2) Judge release (priority)
+  if (latest) {
     // Judge release decision for the very next draw (once)
     const target = latest + 1;
     if (!state.releases.find(r => r.target_draw_number === target)) {
@@ -156,7 +171,7 @@ async function main() {
       state.releases.unshift({ target_draw_number: target, released: dec.release, source: dec.source, reasoning: dec.reasoning, recommended_ticket: ticket, created_at: nowIso() });
     }
   }
-  // Judge press statement + private reflections, for the newest scored round only (cost guard like the backend)
+  // 3) Judge press statement (priority), for the newest scored round only (cost guard like the backend)
   const lastRound = newRounds[newRounds.length - 1];
   if (lastRound && lastRound.played > 0) {
     const standings = E.AI_IDS.map(id => { const s = state.stats[id]; return { ai: s.display_name, rank: s.league_rank, wins: s.total_wins, losses: s.total_losses, streak: s.current_streak, reputation: Math.floor(s.reputation), champion: s.is_champion, recovery: s.in_recovery }; });
@@ -164,9 +179,23 @@ async function main() {
     try { const p = E.extractJson(await llm(E.JUDGE_PERSONA, E.pressPrompt(lastRound.draw_number, standings, E.AI_IDS.map(id => { const sc = lastRound.scores[id]; return E.AGENT_CONFIG[id].display_name + " this round: " + sc.result.toUpperCase() + " with " + sc.total_hits + " total hits"; }).concat(lastRound.events)), lastRound.draw_number % 100000)) || {}; press = { headline: String(p.headline || press.headline).slice(0, 140), body: String(p.body || press.body).slice(0, 600) }; }
     catch (e) { press = { headline: "Judge silent.", body: "Press feed unavailable (" + e.message + ")." }; }
     state.press.unshift({ draw_number: lastRound.draw_number, created_at: nowIso(), ...press });
+  }
+  // 4) Seal further-ahead draws
+  // Seal tickets for the next draws (only targets the source has NOT published yet)
+  if (latest) {
+    for (let target = latest + 1; target <= latest + AHEAD; target++) {
+      state.predictions[target] = state.predictions[target] || {};
+      const todo = E.AI_IDS.filter(id => !state.predictions[target][id]);
+      const results = []; for (const id of todo) results.push(await predict(state, id, target)); // sequential: anonymous tier rejects concurrent calls (HTTP 402)
+      todo.forEach((id, i) => { state.predictions[target][id] = { ai_id: id, target_draw_number: target, sealed_at: nowIso(), revealed: false, ...results[i] }; });
+    }
+  }
+  // Private reflections: lowest priority, skipped when the time budget is short (never starve the judge)
+  if (lastRound && lastRound.played > 0) {
     for (const id of E.AI_IDS) {
       const sc = lastRound.scores[id]; if (!sc || sc.result === "no_play") continue;
       const verb = sc.result === "win" ? "win" : sc.result === "loss" ? "lose" : "draw";
+      if (budgetLeft() < 90000) { console.log("skip reflections: time budget"); break; }
       let text;
       try { text = (await llm(E.AGENT_CONFIG[id].persona, `You just finished draw #${lastRound.draw_number}. Result: ${sc.result}. Total hits: ${sc.total_hits}. Write 2 short sentences PRIVATELY answering: why did I ${verb}? What will I try next? Stay in-character as ${E.AGENT_CONFIG[id].personality}. No JSON, plain text only.`, lastRound.draw_number % 1000 + 1)).slice(0, 400); }
       catch (e) { text = "(reflection unavailable: " + e.message + ")"; }
